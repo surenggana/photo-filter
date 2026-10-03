@@ -18,10 +18,11 @@
   header h1 span{color:var(--accent)}
   header .tag{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:3px 8px;border-radius:20px}
   header .spacer{flex:1}
-  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s}
+  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;white-space:nowrap}
   .btn:hover{border-color:var(--accent)}
   .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none}
   .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.4;cursor:default;border-color:var(--line)}
 
   .layout{display:grid;grid-template-columns:220px 1fr 340px;height:calc(100vh - 61px)}
   @media (max-width:980px){ .layout{grid-template-columns:1fr} .filmstrip,.controls{display:none} }
@@ -44,7 +45,16 @@
   canvas#preview{max-width:100%;max-height:calc(100vh - 120px);display:block;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
   .empty{color:var(--muted);text-align:center}
   .empty .big{font-size:46px;margin-bottom:10px}
-  .badge-compare{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.7);font-size:11px;padding:4px 10px;border-radius:6px;display:none;pointer-events:none}
+  .badge-compare{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.7);font-size:11px;padding:4px 10px;border-radius:6px;display:none;pointer-events:none;z-index:7}
+
+  /* watermark overlay (preview only) */
+  .wm-overlay{position:absolute;pointer-events:none;z-index:6;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.65);font-weight:600;line-height:1.2;white-space:nowrap}
+  .wm-overlay.br{bottom:3%;right:3%;text-align:right}
+  .wm-overlay.bl{bottom:3%;left:3%}
+  .wm-overlay.tr{top:3%;right:3%;text-align:right}
+  .wm-overlay.tl{top:3%;left:3%}
+  .wm-overlay.c{top:50%;left:50%;transform:translate(-50%,-50%)}
+  .wm-overlay img{display:block}
 
   /* controls */
   .controls{border-left:1px solid var(--line);overflow-y:auto;padding:14px;background:var(--panel)}
@@ -62,11 +72,19 @@
   input[type=range]{width:100%;-webkit-appearance:none;height:5px;border-radius:5px;background:var(--panel2);outline:none}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #fff}
   .preset-row{display:flex;gap:6px;align-items:center}
-  select{flex:1;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:8px;font-size:13px}
+  select{flex:1;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:8px;font-size:13px;min-width:0}
   .actions{display:flex;flex-direction:column;gap:8px;margin-top:18px}
   .actions .row2{display:flex;gap:8px}
   .actions .row2 .btn{flex:1}
   .note{font-size:11px;color:var(--muted);margin-top:14px;line-height:1.5;border-top:1px solid var(--line);padding-top:12px}
+
+  /* watermark controls */
+  .wm-row{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+  .wm-row .btn{flex:1}
+  .wm-check{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;flex:1}
+  .wm-check input{width:auto}
+  .wm-input{width:100%;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:8px;font-size:13px;margin-bottom:8px}
+  .wm-input:focus{outline:none;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -91,6 +109,7 @@
   <main class="stage" id="stage">
     <div class="stage-wrap" id="stageWrap" style="display:none">
       <canvas id="preview"></canvas>
+      <div class="wm-overlay br" id="wmOverlay" style="display:none"></div>
       <div class="badge-compare" id="badgeCompare">ASLI</div>
     </div>
     <div class="empty" id="empty">
@@ -120,7 +139,40 @@
     <div class="sec-title">Penyesuaian</div>
     <div id="sliders"></div>
 
+    <div class="sec-title">Watermark</div>
+    <div class="wm-row">
+      <label class="wm-check"><input type="checkbox" id="wmEnabled"> Aktifkan</label>
+      <select id="wmPos">
+        <option value="br">Kanan bawah</option>
+        <option value="bl">Kiri bawah</option>
+        <option value="tr">Kanan atas</option>
+        <option value="tl">Kiri atas</option>
+        <option value="c">Tengah</option>
+      </select>
+    </div>
+    <input type="text" id="wmText" class="wm-input" placeholder="Teks watermark (misal © Nama)">
+    <div class="wm-row">
+      <button class="btn" id="btnWmLogo">🖼 Logo</button>
+      <button class="btn" id="btnWmClear">✕ Hapus logo</button>
+    </div>
+    <div class="slider">
+      <div class="row"><label>Opacity</label><span class="val" id="valWmOpacity">0.50</span></div>
+      <input type="range" id="wmOpacity" min="0" max="1" step="0.01" value="0.5">
+    </div>
+    <div class="slider">
+      <div class="row"><label>Ukuran</label><span class="val" id="valWmSize">0.04</span></div>
+      <input type="range" id="wmSize" min="0.01" max="0.2" step="0.005" value="0.04">
+    </div>
+
     <div class="actions">
+      <div class="row2">
+        <button class="btn" id="btnUndo" title="Kembali ke langkah sebelumnya">↶ Undo</button>
+        <button class="btn" id="btnRedo" title="Ulangi langkah">↷ Redo</button>
+      </div>
+      <div class="row2">
+        <button class="btn" id="btnAuto">✨ Auto Enhance</button>
+        <button class="btn" id="btnApplyAll">📑 Terapkan ke semua</button>
+      </div>
       <div class="row2">
         <button class="btn" id="btnReset">↺ Reset</button>
         <button class="btn" id="btnCompare">👁 Tahan: bandingkan</button>
@@ -133,7 +185,7 @@
       </div>
       <button class="btn primary" id="btnDownloadAll">⬇ Download semua (ZIP)</button>
     </div>
-    <div class="note">💡 Saran: tentukan 1 preset (misal rasio 4:5 + tone favorit), simpan, lalu terapkan ke semua foto sebelum upload feed. Hasil dijamin seragam.</div>
+    <div class="note">💡 Tentukan 1 preset (misal rasio 4:5 + tone favorit), lalu klik "Terapkan ke semua" agar semua foto seragam. Gunakan watermark untuk branding, dan ✨ Auto Enhance untuk hasil instan.</div>
   </aside>
 </div>
 
@@ -156,20 +208,38 @@ const DEFS = [
 const IDENTITY = Object.fromEntries(DEFS.map(d=>[d.key, d.def]));
 
 const STARTER_PRESETS = {
-  "Clean & Bright": {exposure:0.25, contrast:1.05, saturation:1.05, temperature:-0.08, tint:0.02, highlights:-0.10, shadows:0.15, sharpen:0.20, vignette:0, grain:0, fade:0.03},
-  "Warm & Creamy": {exposure:0.15, contrast:1.0, saturation:0.90, temperature:0.28, tint:0.04, highlights:-0.15, shadows:0.20, sharpen:0, vignette:0.12, grain:0.12, fade:0.18},
-  "Moody & Dark":   {exposure:-0.25, contrast:1.25, saturation:0.85, temperature:-0.05, tint:-0.03, highlights:-0.20, shadows:-0.15, sharpen:0.15, vignette:0.40, grain:0.18, fade:0.10},
+  "Original":            {exposure:0, contrast:1, saturation:1, temperature:0, tint:0, highlights:0, shadows:0, sharpen:0, vignette:0, grain:0, fade:0},
+  "Clean & Bright":      {exposure:0.25, contrast:1.05, saturation:1.05, temperature:-0.08, tint:0.02, highlights:-0.10, shadows:0.15, sharpen:0.20, vignette:0, grain:0, fade:0.03},
+  "Warm & Creamy":       {exposure:0.15, contrast:1.0, saturation:0.90, temperature:0.28, tint:0.04, highlights:-0.15, shadows:0.20, sharpen:0, vignette:0.12, grain:0.12, fade:0.18},
+  "Moody & Dark":        {exposure:-0.25, contrast:1.25, saturation:0.85, temperature:-0.05, tint:-0.03, highlights:-0.20, shadows:-0.15, sharpen:0.15, vignette:0.40, grain:0.18, fade:0.10},
+  "Black & White":       {exposure:0.05, contrast:1.15, saturation:0, temperature:0, tint:0, highlights:0, shadows:0.05, sharpen:0.15, vignette:0.10, grain:0.10, fade:0.05},
+  "Vintage Film":        {exposure:0.05, contrast:0.95, saturation:0.75, temperature:0.20, tint:0.02, highlights:-0.10, shadows:0.05, sharpen:0, vignette:0.20, grain:0.15, fade:0.25},
+  "Golden Hour":         {exposure:0.10, contrast:1.05, saturation:1.10, temperature:0.35, tint:0.05, highlights:-0.05, shadows:0.10, sharpen:0, vignette:0.06, grain:0, fade:0.08},
+  "Cool Blue":           {exposure:0.05, contrast:1.05, saturation:1.05, temperature:-0.30, tint:0, highlights:-0.05, shadows:0.05, sharpen:0.10, vignette:0, grain:0, fade:0.10},
+  "Soft Pastel":         {exposure:0.20, contrast:0.90, saturation:0.85, temperature:0.05, tint:0.03, highlights:-0.10, shadows:0.15, sharpen:0, vignette:0, grain:0.05, fade:0.30},
+  "Cyberpunk":           {exposure:0.05, contrast:1.20, saturation:1.30, temperature:-0.25, tint:0.20, highlights:-0.10, shadows:0.10, sharpen:0.20, vignette:0.15, grain:0.08, fade:0.05},
+  "Cinematic Teal":      {exposure:0.02, contrast:1.15, saturation:1.10, temperature:0.15, tint:-0.10, highlights:-0.15, shadows:0.10, sharpen:0.10, vignette:0.12, grain:0.05, fade:0.08},
+  "Noir B&W":            {exposure:-0.10, contrast:1.40, saturation:0, temperature:0, tint:0, highlights:-0.05, shadows:-0.05, sharpen:0.15, vignette:0.35, grain:0.20, fade:0.05},
+  "Retro Fade":          {exposure:0.08, contrast:0.95, saturation:0.70, temperature:0.15, tint:0, highlights:-0.10, shadows:0.08, sharpen:0, vignette:0.10, grain:0.12, fade:0.40},
+  "Forest Green":        {exposure:0.05, contrast:1.05, saturation:0.95, temperature:-0.10, tint:-0.15, highlights:-0.05, shadows:0.05, sharpen:0.08, vignette:0.08, grain:0.05, fade:0.08},
+  "Bold Pop":            {exposure:0.10, contrast:1.20, saturation:1.25, temperature:0, tint:0, highlights:-0.05, shadows:0, sharpen:0.25, vignette:0.10, grain:0, fade:0},
+  "Dreamy Haze":         {exposure:0.30, contrast:0.85, saturation:0.90, temperature:0.05, tint:0.02, highlights:-0.20, shadows:0.10, sharpen:0, vignette:0.05, grain:0.08, fade:0.35},
+  "Silver Mist":         {exposure:0.10, contrast:1.0, saturation:0.60, temperature:-0.15, tint:0, highlights:-0.05, shadows:0.08, sharpen:0.05, vignette:0, grain:0, fade:0.20},
+  "Sunset Glow":         {exposure:0.05, contrast:1.05, saturation:1.20, temperature:0.40, tint:0.10, highlights:-0.05, shadows:0.10, sharpen:0, vignette:0.08, grain:0, fade:0.06},
 };
 
 /* ==================== STATE ==================== */
 const files = [];                 // File objects
 const thumbs = [];                // {url, el}
+const photoParams = [];           // params per foto (untuk batch apply)
 let currentIdx = -1;
 let img = null;                   // current HTMLImageElement
 let params = {...IDENTITY};
 let ratio = "orig";               // "orig" | "w:h"
 let comparing = false;
 let presets = loadPresets();
+const wm = {enabled:false, type:"text", text:"", logoImg:null, pos:"br", opacity:0.5, size:0.04};
+const undoStack = [], redoStack = [];
 
 /* ==================== DOM ==================== */
 const $ = id => document.getElementById(id);
@@ -258,7 +328,6 @@ function createRenderer(cv){
       const w=Math.max(1,Math.round(cr.w*scale)), h=Math.max(1,Math.round(cr.h*scale));
       cv.width=w; cv.height=h;
       gl.viewport(0,0,w,h);
-      // draw source into a temp 2D canvas (auto EXIF orientation via drawImage)
       let src=this._src;
       if(!src){ src=this._src=document.createElement("canvas"); this._sctx=src.getContext("2d"); }
       src.width=w; src.height=h;
@@ -301,15 +370,22 @@ function buildSliders(){
       </div>
       <input type="range" data-k="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${d.def}">`;
     wrap.appendChild(div);
-    div.querySelector("input").addEventListener("input", e=>{
+    const input = div.querySelector("input");
+    let dragStart = null;
+    input.addEventListener("pointerdown", ()=>{ dragStart = {...params}; });
+    input.addEventListener("input", e=>{
       params[d.key]=parseFloat(e.target.value);
       $("val-"+d.key).textContent=d.fmt(params[d.key]);
+      syncCurrentPhotoParams();
       scheduleRender();
     });
+    input.addEventListener("change", ()=>{ if(dragStart){ commit(dragStart); dragStart=null; } });
     div.querySelector(".reset").addEventListener("click", ()=>{
+      commit({...params});
       params[d.key]=d.def;
       const inp=div.querySelector("input"); inp.value=d.def;
       $("val-"+d.key).textContent=d.fmt(d.def);
+      syncCurrentPhotoParams();
       scheduleRender();
     });
   }
@@ -321,6 +397,133 @@ function refreshSliderValues(){
     if(inp) inp.value=params[d.key];
     const v=$("val-"+d.key); if(v) v.textContent=d.fmt(params[d.key]);
   }
+}
+function syncCurrentPhotoParams(){
+  if(currentIdx>=0) photoParams[currentIdx]={...params};
+}
+
+/* ==================== UNDO / REDO ==================== */
+function commit(oldParams){
+  undoStack.push({...oldParams});
+  if(undoStack.length>60) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoUI();
+}
+function undo(){
+  if(!undoStack.length) return;
+  redoStack.push({...params});
+  params = undoStack.pop();
+  applyParams();
+}
+function redo(){
+  if(!redoStack.length) return;
+  undoStack.push({...params});
+  params = redoStack.pop();
+  applyParams();
+}
+function applyParams(){
+  refreshSliderValues();
+  syncCurrentPhotoParams();
+  scheduleRender();
+}
+function updateUndoUI(){
+  $("btnUndo").disabled = undoStack.length===0;
+  $("btnRedo").disabled = redoStack.length===0;
+}
+
+/* ==================== AUTO ENHANCE ==================== */
+function autoEnhance(){
+  if(!img || currentIdx<0) return alert("Pilih foto dulu");
+  commit({...params});
+  const iw = img.naturalWidth||img.width, ih = img.naturalHeight||img.height;
+  const c = document.createElement("canvas");
+  const s = Math.min(1, 64/Math.max(iw,ih));
+  c.width = Math.max(1, Math.round(iw*s)); c.height = Math.max(1, Math.round(ih*s));
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  const d = ctx.getImageData(0,0,c.width,c.height).data;
+  let sum=0, n=0; const lums=[];
+  for(let i=0;i<d.length;i+=4){ const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; lums.push(l); sum+=l; n++; }
+  const mean = sum/n;
+  const variance = lums.reduce((a,l)=>a+(l-mean)*(l-mean),0)/n;
+  const std = Math.sqrt(variance);
+  const exposure = Math.max(-1.5, Math.min(1.5, Math.log2(128/Math.max(mean,8))));
+  const contrast = Math.max(0.85, Math.min(1.35, 60/Math.max(std,10)));
+  params.exposure = exposure;
+  params.contrast = contrast;
+  params.saturation = Math.max(0.9, Math.min(1.2, params.saturation*1.05));
+  refreshSliderValues();
+  syncCurrentPhotoParams();
+  scheduleRender();
+}
+
+/* ==================== BATCH APPLY ==================== */
+function applyToAll(){
+  if(!files.length) return alert("Belum ada foto");
+  commit({...params});
+  for(let i=0;i<photoParams.length;i++) photoParams[i]={...params};
+  alert("Preset diterapkan ke " + files.length + " foto ✅");
+}
+
+/* ==================== WATERMARK ==================== */
+function updateWatermarkOverlay(){
+  const ov = $("wmOverlay");
+  if(!wm.enabled){ ov.style.display="none"; ov.innerHTML=""; return; }
+  ov.style.display="block";
+  ov.className = "wm-overlay " + wm.pos;
+  ov.style.opacity = wm.opacity;
+  const base = Math.min(canvas.width, canvas.height) || 800;
+  const size = Math.max(12, Math.round(base * wm.size));
+  if(wm.type==="logo" && wm.logoImg){
+    ov.innerHTML="";
+    const im = document.createElement("img");
+    im.src = wm.logoImg.src;
+    im.style.width = size + "px";
+    ov.appendChild(im);
+  } else {
+    ov.textContent = wm.text || "";
+    ov.style.fontSize = size + "px";
+  }
+}
+function drawWatermark(ctx, w, h){
+  if(!wm.enabled) return;
+  ctx.save();
+  ctx.globalAlpha = wm.opacity;
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.textBaseline = "alphabetic";
+  const margin = Math.round(Math.min(w,h)*0.03);
+  if(wm.type==="logo" && wm.logoImg){
+    const size = Math.min(w,h)*wm.size;
+    const img = wm.logoImg;
+    const ratio = img.naturalWidth/Math.max(1,img.naturalHeight);
+    const dw = Math.round(size), dh = Math.round(size/ratio);
+    let x,y;
+    switch(wm.pos){
+      case "tl": x=margin; y=margin; break;
+      case "tr": x=w-margin-dw; y=margin; break;
+      case "bl": x=margin; y=h-margin-dh; break;
+      case "c": x=(w-dw)/2; y=(h-dh)/2; break;
+      default: x=w-margin-dw; y=h-margin-dh;
+    }
+    ctx.drawImage(img, x, y, dw, dh);
+  } else if(wm.text){
+    const fs = Math.max(10, Math.round(Math.min(w,h)*wm.size));
+    ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    ctx.lineWidth = Math.max(1, fs*0.08);
+    const tw = ctx.measureText(wm.text).width;
+    let x,y;
+    switch(wm.pos){
+      case "tl": x=margin; y=margin+fs; break;
+      case "tr": x=w-margin-tw; y=margin+fs; break;
+      case "bl": x=margin; y=h-margin; break;
+      case "c": x=(w-tw)/2; y=(h+fs*0.35)/2; break;
+      default: x=w-margin-tw; y=h-margin;
+    }
+    ctx.strokeText(wm.text, x, y);
+    ctx.fillText(wm.text, x, y);
+  }
+  ctx.restore();
 }
 
 /* ==================== PRESETS ==================== */
@@ -341,7 +544,8 @@ function fillPresetSelect(){
 }
 $("presetSelect").addEventListener("change", e=>{
   const p=presets[e.target.value]; if(!p) return;
-  params={...IDENTITY, ...p}; refreshSliderValues(); scheduleRender();
+  commit({...params});
+  params={...IDENTITY, ...p}; refreshSliderValues(); syncCurrentPhotoParams(); scheduleRender();
 });
 $("btnSavePreset").addEventListener("click", ()=>{
   const name=prompt("Nama preset:", "Preset saya");
@@ -374,19 +578,20 @@ function renderPreview(){
   if(!img || currentIdx<0){ return; }
   const p = comparing ? IDENTITY : params;
   previewGL.render(img, p, ratio, 1800);
+  updateWatermarkOverlay();
 }
 $("btnCompare").addEventListener("pointerdown", ()=>{ comparing=true; $("badgeCompare").style.display="block"; scheduleRender(); });
 ["pointerup","pointerleave","pointercancel"].forEach(ev=>{
   $("btnCompare").addEventListener(ev, ()=>{ comparing=false; $("badgeCompare").style.display="none"; scheduleRender(); });
 });
-$("btnReset").addEventListener("click", ()=>{ params={...IDENTITY}; refreshSliderValues(); scheduleRender(); });
+$("btnReset").addEventListener("click", ()=>{ commit({...params}); params={...IDENTITY}; refreshSliderValues(); syncCurrentPhotoParams(); scheduleRender(); });
 
 /* ==================== IMAGE LOADING ==================== */
 function addFiles(list){
   let added=false;
   for(const f of list){
     if(!f.type.startsWith("image/")) continue;
-    files.push(f); added=true;
+    files.push(f); photoParams.push({...IDENTITY}); added=true;
     const url=URL.createObjectURL(f);
     const el=document.createElement("div"); el.className="thumb";
     const idx=files.length-1;
@@ -401,8 +606,7 @@ function addFiles(list){
 }
 function removeImage(idx){
   URL.revokeObjectURL(thumbs[idx].url);
-  thumbs[idx].el.remove(); thumbs.splice(idx,1); files.splice(idx,1);
-  // reindex labels
+  thumbs[idx].el.remove(); thumbs.splice(idx,1); files.splice(idx,1); photoParams.splice(idx,1);
   thumbs.forEach((t,i)=>t.el.querySelector(".idx").textContent=i+1);
   if(idx===currentIdx){
     img=null; currentIdx=-1;
@@ -414,6 +618,8 @@ function removeImage(idx){
 function selectImage(idx){
   currentIdx=idx;
   thumbs.forEach((t,i)=>t.el.classList.toggle("active",i===idx));
+  params = photoParams[idx] ? {...photoParams[idx]} : {...IDENTITY};
+  refreshSliderValues();
   const im=new Image();
   im.onload=()=>{ img=im; empty.style.display="none"; stageWrap.style.display="block"; renderPreview(); };
   im.src=thumbs[idx].url;
@@ -432,9 +638,13 @@ function downloadBlob(blob,name){
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
-function exportCanvas(cv, wantPng, cb){
-  const mime=wantPng?"image/png":"image/jpeg";
-  cv.toBlob(cb, mime, wantPng?undefined:0.92);
+function finalize(glCanvas, wantPng, cb){
+  const w=glCanvas.width, h=glCanvas.height;
+  const out=document.createElement("canvas"); out.width=w; out.height=h;
+  const ctx=out.getContext("2d");
+  ctx.drawImage(glCanvas,0,0);
+  drawWatermark(ctx,w,h);
+  out.toBlob(cb, wantPng?"image/png":"image/jpeg", wantPng?undefined:0.92);
 }
 function baseName(file, wantPng){
   const n=file.name.replace(/\.[^.]+$/,"");
@@ -444,7 +654,7 @@ $("btnDownload").addEventListener("click", async ()=>{
   if(!img||currentIdx<0) return alert("Pilih foto dulu");
   const wantPng=$("chkPng").checked;
   exportGL.render(img, params, ratio);
-  exportCanvas(exportGL.canvas, wantPng, blob=>downloadBlob(blob, baseName(files[currentIdx],wantPng)));
+  finalize(exportGL.canvas, wantPng, blob=>downloadBlob(blob, baseName(files[currentIdx],wantPng)));
 });
 $("btnDownloadAll").addEventListener("click", async ()=>{
   if(!files.length) return alert("Belum ada foto");
@@ -453,16 +663,38 @@ $("btnDownloadAll").addEventListener("click", async ()=>{
   const im=new Image();
   for(let i=0;i<files.length;i++){
     await new Promise(res=>{ im.onload=res; im.src=thumbs[i].url; });
-    exportGL.render(im, params, ratio);
-    const blob=await new Promise(res=>exportCanvas(exportGL.canvas, wantPng, res));
+    exportGL.render(im, photoParams[i]||IDENTITY, ratio);
+    const blob=await new Promise(res=>finalize(exportGL.canvas, wantPng, res));
     zip.file(baseName(files[i],wantPng), blob);
   }
   const out=await zip.generateAsync({type:"blob"});
   downloadBlob(out,"photo-filter-batch.zip");
 });
 
+/* ==================== WIRING ==================== */
+$("btnUndo").addEventListener("click", undo);
+$("btnRedo").addEventListener("click", redo);
+$("btnAuto").addEventListener("click", autoEnhance);
+$("btnApplyAll").addEventListener("click", applyToAll);
+
+$("wmEnabled").addEventListener("change", e=>{ wm.enabled=e.target.checked; updateWatermarkOverlay(); });
+$("wmText").addEventListener("input", e=>{ wm.text=e.target.value; if(wm.enabled) updateWatermarkOverlay(); });
+$("wmPos").addEventListener("change", e=>{ wm.pos=e.target.value; updateWatermarkOverlay(); });
+$("wmOpacity").addEventListener("input", e=>{ wm.opacity=parseFloat(e.target.value); $("valWmOpacity").textContent=wm.opacity.toFixed(2); updateWatermarkOverlay(); });
+$("wmSize").addEventListener("input", e=>{ wm.size=parseFloat(e.target.value); $("valWmSize").textContent=wm.size.toFixed(3); updateWatermarkOverlay(); });
+$("btnWmLogo").addEventListener("click", ()=>{
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f) return;
+    const im=new Image();
+    im.onload=()=>{ wm.logoImg=im; wm.type="logo"; wm.enabled=true; $("wmEnabled").checked=true; updateWatermarkOverlay(); };
+    im.src=URL.createObjectURL(f);
+  };
+  inp.click();
+});
+$("btnWmClear").addEventListener("click", ()=>{ wm.logoImg=null; wm.type="text"; updateWatermarkOverlay(); });
+
 /* ==================== INIT ==================== */
-buildSliders(); refreshSliderValues(); fillPresetSelect(); updateCount();
+buildSliders(); refreshSliderValues(); fillPresetSelect(); updateCount(); updateUndoUI();
 </script>
 </body>
 </html>
